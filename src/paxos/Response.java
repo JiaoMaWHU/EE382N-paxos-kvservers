@@ -9,7 +9,15 @@ import java.io.Serializable;
 public class Response implements Serializable {
     static final long serialVersionUID=2L;
     // your data here
+    public int n;
+    public int n_a;
+    public Object v_a;
 
 
     // Your constructor and methods here
+    public Response(int n_, int n_a_, Object v_a_){
+        n = n_;
+        n_a = n_a_;
+        v_a = v_a_;
+    }
 }

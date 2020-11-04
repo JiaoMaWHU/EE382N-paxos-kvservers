@@ -2,6 +2,9 @@ package paxos;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.server.UnicastRemoteObject;
 import java.rmi.registry.Registry;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -22,7 +25,19 @@ public class Paxos implements PaxosRMI, Runnable{
     AtomicBoolean unreliable;// for testing
 
     // Your data here
+    int peers_length;
+    int majority;
 
+    int n_promise;
+    int n_accpet;
+    Object v_accpet;
+    HashMap<Integer, retStatus> records;
+
+    int seq;
+    Object v_proposal;
+
+    int done_seq;
+    int[] peers_done_seq;
 
     /**
      * Call the constructor to create a Paxos peer.
@@ -39,7 +54,18 @@ public class Paxos implements PaxosRMI, Runnable{
         this.unreliable = new AtomicBoolean(false);
 
         // Your initialization code here
-
+        peers_length = peers.length;
+        majority = (peers_length /2) + 1;
+        n_promise = -1;
+        n_accpet = -1;
+        v_accpet = null;
+        records = new HashMap<Integer, retStatus>();
+        seq = -1;
+        v_proposal = null;
+        done_seq = -1;
+        peers_done_seq = new int[peers_length];
+        for (int i = 0; i<peers_length; i++)
+            peers_done_seq[i] = -1;
 
         // register peers, do not modify this part
         try{
@@ -106,28 +132,163 @@ public class Paxos implements PaxosRMI, Runnable{
      * is reached.
      */
     public void Start(int seq, Object value){
-        // Your code here
+        mutex.lock();
+        try {
+            if (seq < Min()) {
+                return;
+            }
+            this.seq = seq;
+            this.v_proposal = value;
+        } finally {
+            mutex.unlock();
+        }
+        Thread t = new Thread(this);
+        t.start();
     }
 
     @Override
     public void run(){
-        //Your code here
+        int n_proposal_;
+        int highest_n_sofar = -1;
+        int seq_;
+        int cp_done_seq;
+        Object v_proposal_;
+
+        mutex.lock();
+        try {
+            seq_ = seq;
+            v_proposal_ = v_proposal;
+        } finally {
+            mutex.unlock();
+        }
+
+        while (true) {
+            mutex.lock();
+            try {
+                if (records.get(seq_).state == State.Decided )
+                    break;
+            }finally {
+                mutex.unlock();
+            }
+
+            n_proposal_ = highest_n_sofar+1;
+            highest_n_sofar++;
+
+            // propose
+            Response[] responses = new Response[peers_length];
+            mutex.lock();
+            try {
+                cp_done_seq = done_seq;
+            }finally {
+                mutex.unlock();
+            }
+            Request prepare_req = new Request(seq_, n_proposal_, null, cp_done_seq, me);
+            for (int i = 0; i < peers_length; i++) {
+                responses[i] = Call("Prepare", prepare_req, i);
+            }
+
+            int max_n_a = -1;
+            int good_responses = 0;
+            Object v_a = null;
+            Object v_prime = null;
+            for (Response res : responses) {
+                highest_n_sofar = Math.max(highest_n_sofar, res.n_a);
+                if (res.n == n_proposal_) {
+                    good_responses++;
+                    if (res.n_a > max_n_a) {
+                        max_n_a = res.n_a;
+                        v_a = res.v_a;
+                    }
+                }
+            }
+
+            if (good_responses < majority) {
+                continue;
+            }
+
+            v_prime = v_a == null ? v_proposal_ : v_a;
+
+            // accept
+            mutex.lock();
+            try {
+                cp_done_seq = done_seq;
+            }finally {
+                mutex.unlock();
+            }
+            Request accept_req = new Request(seq_, n_proposal_, v_prime, cp_done_seq, me);
+            for (int i = 0; i < peers_length; i++) {
+                responses[i] = Call("Accept", accept_req, i);
+            }
+            good_responses = 0;
+            for (Response res : responses) {
+                if (res.n == n_proposal_) {
+                    good_responses++;
+                }
+            }
+
+            if (good_responses < majority) {
+                continue;
+            }
+
+            // decide
+            mutex.lock();
+            try {
+                cp_done_seq = done_seq;
+            }finally {
+                mutex.unlock();
+            }
+            Request decide_req = new Request(seq_, n_proposal_, v_prime, cp_done_seq, me);
+            for (int i = 0; i < peers_length; i++) {
+                responses[i] = Call("Decide", decide_req, i);
+            }
+        }
     }
 
     // RMI handler
     public Response Prepare(Request req){
-        // your code here
-
+        mutex.lock();
+        try {
+            records.put(req.seq, new retStatus(State.Pending, null));
+            peers_done_seq[req.me] = req.done_seq;
+            if (req.n > n_promise) {
+                n_promise = req.n;
+                return new Response(req.n, n_accpet, v_accpet);
+            }else{
+                return new Response(-1, -1, null);
+            }
+        }finally {
+            mutex.unlock();
+        }
     }
 
     public Response Accept(Request req){
-        // your code here
+        mutex.lock();
+        try {
+            peers_done_seq[req.me] = req.done_seq;
+            if (req.n >= n_promise) {
+                n_promise = req.n;
+                n_accpet = req.n;
+                v_accpet = req.v;
+                return new Response(req.n, n_accpet, v_accpet);
+            }else{
+                return new Response(-1, -1, null);
+            }
+        }finally {
+            mutex.unlock();
+        }
 
     }
 
     public Response Decide(Request req){
-        // your code here
-
+        mutex.lock();
+        try {
+            peers_done_seq[req.me] = req.done_seq;
+            records.get(req.seq).state = State.Decided;
+            records.get(req.seq).v = req.v;
+        }finally {
+            mutex.unlock();
+        }
+        return new Response(req.n, n_accpet, v_accpet);
     }
 
     /**
@@ -137,7 +298,12 @@ public class Paxos implements PaxosRMI, Runnable{
      * see the comments for Min() for more explanation.
      */
     public void Done(int seq) {
-        // Your code here
+        mutex.lock();
+        try {
+            done_seq = Math.max(done_seq, seq);
+        }finally {
+            mutex.unlock();
+        }
     }
 
 
@@ -147,7 +313,14 @@ public class Paxos implements PaxosRMI, Runnable{
      * this peer.
      */
     public int Max(){
-        // Your code here
+        int max_seq = -1;
+        mutex.lock();
+        try {
+            max_seq = Collections.max(records.keySet());
+        }finally {
+            mutex.unlock();
+        }
+        return max_seq;
     }
 
     /**
@@ -179,8 +352,20 @@ public class Paxos implements PaxosRMI, Runnable{
      * instances.
      */
     public int Min(){
-        // Your code here
-
+        int min = Integer.MAX_VALUE;
+        mutex.lock();
+        try {
+            for (int i: peers_done_seq)
+                min = Math.min(min, i);
+            for (int key: records.keySet()) {
+                if (key <= min) {
+                    records.get(key).state = State.Forgotten;
+                }
+            }
+        }finally {
+            mutex.unlock();
+        }
+        return min+1;
     }
 
 
@@ -194,7 +379,15 @@ public class Paxos implements PaxosRMI, Runnable{
      */
     public retStatus Status(int seq){
         // Your code here
-
+        this.Min();
+        retStatus ret = null;
+        mutex.lock();
+        try {
+            ret = records.get(seq);
+        }finally {
+            mutex.unlock();
+        }
+        return ret;
     }
 
     /**

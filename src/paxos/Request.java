@@ -10,14 +10,18 @@ import java.io.Serializable;
 public class Request implements Serializable {
     static final long serialVersionUID=1L;
     // Your data here
-    int id;
-    int n;
-    Object v;
+    public int seq;
+    public int n;
+    public Object v;
+    public int done_seq;
+    public int me;
 
     // Your constructor and methods here
-    public Request(int id, int n, Object v) {
-        this.id = id;
+    public Request(int seq, int n, Object v, int done_seq, int me) {
+        this.seq = seq;
         this.n = n;
         this.v = v;
+        this.done_seq = done_seq;
+        this.me = me;
     }
 }
