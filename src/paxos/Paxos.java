@@ -165,7 +165,7 @@ public class Paxos implements PaxosRMI, Runnable{
         while (true) {
             mutex.lock();
             try {
-                if (records.get(seq_).state == State.Decided )
+                if (records.get(seq_) != null && records.get(seq_).state == State.Decided )
                     break;
             }finally {
                 mutex.unlock();
@@ -192,6 +192,9 @@ public class Paxos implements PaxosRMI, Runnable{
             Object v_a = null;
             Object v_prime = null;
             for (Response res : responses) {
+                if (res == null) {
+                    continue;
+                }
                 highest_n_sofar = Math.max(highest_n_sofar, res.n_a);
                 if (res.n == n_proposal_) {
                     good_responses++;
@@ -221,6 +224,9 @@ public class Paxos implements PaxosRMI, Runnable{
             }
             good_responses = 0;
             for (Response res : responses) {
+                if (res == null) {
+                    continue;
+                }
                 if (res.n == n_proposal_) {
                     good_responses++;
                 }
@@ -384,6 +390,9 @@ public class Paxos implements PaxosRMI, Runnable{
         mutex.lock();
         try {
             ret = records.get(seq);
+            if (ret == null) {
+                return new retStatus(State.Pending, null);
+            }
         }finally {
             mutex.unlock();
         }
