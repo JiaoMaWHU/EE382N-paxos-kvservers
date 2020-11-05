@@ -308,6 +308,7 @@ public class Paxos implements PaxosRMI, Runnable{
         try {
             peers_done_seq[req.me] = req.done_seq;
             records.get(req.seq).state = State.Decided;
+            records.get(req.seq).v_accept = req.v;
         }finally {
             mutex.unlock();
         }
