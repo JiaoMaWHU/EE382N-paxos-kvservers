@@ -184,7 +184,10 @@ public class Paxos implements PaxosRMI, Runnable{
             }
             Request prepare_req = new Request(seq_, n_proposal_, null, cp_done_seq, me);
             for (int i = 0; i < peers_length; i++) {
-                responses[i] = Call("Prepare", prepare_req, i);
+                if (i != me)
+                    responses[i] = Call("Prepare", prepare_req, i);
+                else
+                    responses[i] = Prepare(prepare_req);
             }
 
             int max_n_a = -1;
@@ -220,7 +223,10 @@ public class Paxos implements PaxosRMI, Runnable{
             }
             Request accept_req = new Request(seq_, n_proposal_, v_prime, cp_done_seq, me);
             for (int i = 0; i < peers_length; i++) {
-                responses[i] = Call("Accept", accept_req, i);
+                if (i != me)
+                    responses[i] = Call("Accept", accept_req, i);
+                else
+                    responses[i] = Accept(accept_req);
             }
             good_responses = 0;
             for (Response res : responses) {
@@ -245,7 +251,10 @@ public class Paxos implements PaxosRMI, Runnable{
             }
             Request decide_req = new Request(seq_, n_proposal_, v_prime, cp_done_seq, me);
             for (int i = 0; i < peers_length; i++) {
-                responses[i] = Call("Decide", decide_req, i);
+                if (i != me)
+                    responses[i] = Call("Decide", decide_req, i);
+                else
+                    responses[i] = Decide(decide_req);
             }
         }
     }
