@@ -25,13 +25,24 @@ public class Paxos implements PaxosRMI, Runnable{
     AtomicBoolean unreliable;// for testing
 
     // Your data here
+    public class record {
+        public int n_promise;
+        public int n_accept;
+        public Object v_accept;
+        public State state;
+
+        public record(){
+            this.n_promise = -1;
+            this.n_accept = -1;
+            this.v_accept = null;
+            this.state = State.Pending;
+        }
+    }
+
     int peers_length;
     int majority;
 
-    int n_promise;
-    int n_accpet;
-    Object v_accpet;
-    HashMap<Integer, retStatus> records;
+    HashMap<Integer, record> records;
 
     int seq;
     Object v_proposal;
@@ -56,10 +67,7 @@ public class Paxos implements PaxosRMI, Runnable{
         // Your initialization code here
         peers_length = peers.length;
         majority = (peers_length /2) + 1;
-        n_promise = -1;
-        n_accpet = -1;
-        v_accpet = null;
-        records = new HashMap<Integer, retStatus>();
+        records = new HashMap<Integer, record>();
         seq = -1;
         v_proposal = null;
         done_seq = -1;
@@ -263,11 +271,12 @@ public class Paxos implements PaxosRMI, Runnable{
     public Response Prepare(Request req){
         mutex.lock();
         try {
-            records.put(req.seq, new retStatus(State.Pending, null));
+            if (records.get(req.seq) == null)
+                records.put(req.seq, new record());
             peers_done_seq[req.me] = req.done_seq;
-            if (req.n > n_promise) {
-                n_promise = req.n;
-                return new Response(req.n, n_accpet, v_accpet);
+            if (req.n > records.get(req.seq).n_promise) {
+                records.get(req.seq).n_promise = req.n;
+                return new Response(req.n, records.get(req.seq).n_accept, records.get(req.seq).v_accept);
             }else{
                 return new Response(-1, -1, null);
             }
@@ -280,11 +289,11 @@ public class Paxos implements PaxosRMI, Runnable{
         mutex.lock();
         try {
             peers_done_seq[req.me] = req.done_seq;
-            if (req.n >= n_promise) {
-                n_promise = req.n;
-                n_accpet = req.n;
-                v_accpet = req.v;
-                return new Response(req.n, n_accpet, v_accpet);
+            if (req.n >= records.get(req.seq).n_promise) {
+                records.get(req.seq).n_promise = req.n;
+                records.get(req.seq).n_accept = req.n;
+                records.get(req.seq).v_accept = req.v;
+                return new Response(req.n, records.get(req.seq).n_accept, records.get(req.seq).v_accept);
             }else{
                 return new Response(-1, -1, null);
             }
@@ -299,11 +308,10 @@ public class Paxos implements PaxosRMI, Runnable{
         try {
             peers_done_seq[req.me] = req.done_seq;
             records.get(req.seq).state = State.Decided;
-            records.get(req.seq).v = req.v;
         }finally {
             mutex.unlock();
         }
-        return new Response(req.n, n_accpet, v_accpet);
+        return new Response(req.n, records.get(req.seq).n_accept, records.get(req.seq).v_accept);
     }
 
     /**
@@ -398,10 +406,10 @@ public class Paxos implements PaxosRMI, Runnable{
         retStatus ret = null;
         mutex.lock();
         try {
-            ret = records.get(seq);
-            if (ret == null) {
+            if (records.get(seq) == null) {
                 return new retStatus(State.Pending, null);
             }
+            ret = new retStatus(records.get(seq).state, records.get(seq).v_accept);
         }finally {
             mutex.unlock();
         }
