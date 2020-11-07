@@ -6,6 +6,10 @@ import paxos.State;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class Server implements KVPaxosRMI {
@@ -20,6 +24,9 @@ public class Server implements KVPaxosRMI {
     KVPaxosRMI stub;
 
     // Your definitions here
+    Map<String, Integer> keyValMap;
+    int curSeq;
+    Set<Integer> pastRequests;
 
 
     public Server(String[] servers, int[] ports, int me){
@@ -29,8 +36,9 @@ public class Server implements KVPaxosRMI {
         this.mutex = new ReentrantLock();
         this.px = new Paxos(me, servers, ports);
         // Your initialization code here
-
-
+        this.keyValMap = new HashMap<>();
+        this.curSeq = 0;
+        this.pastRequests = new HashSet<>();
 
         try{
             System.setProperty("java.rmi.server.hostname", this.servers[this.me]);
@@ -42,16 +50,91 @@ public class Server implements KVPaxosRMI {
         }
     }
 
+    public Op wait(int seq) {
+        int to = 10;
+        while (true) {
+            Paxos.retStatus ret = this.px.Status(seq);
+            if (ret.state == State.Decided) {
+                return (Op) ret.v;
+            }
+            try {
+                Thread.sleep(to);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            if (to < 1000) {
+                to = to * 2;
+            }
+        }
+    }
+
+    private void updateKeyValMap(int maxSeq) {
+        for (int i = curSeq; i <= maxSeq; i++) {
+            if (px.Status(i).state == State.Decided) {
+                Op oPair = (Op) px.Status(i).v;
+                if (oPair.op.equals("Put")) {
+                    keyValMap.put(oPair.key, oPair.value);
+                }
+                pastRequests.add(oPair.ClientSeq);
+            }
+        }
+    }
 
     // RMI handlers
     public Response Get(Request req){
         // Your code here
-        return null;
+        try {
+            mutex.lock();
+            int ClientSeq = req.oPair.ClientSeq;
+            String key = req.oPair.key;
+
+            if (pastRequests.contains(ClientSeq)) {
+                Integer val = keyValMap.getOrDefault(key, null);
+                return new Response(key, val, true);
+            }
+
+            pastRequests.add(ClientSeq);
+            px.Start(curSeq, req.oPair);
+            wait(curSeq);
+
+            int maxSeq = px.Max();
+            updateKeyValMap(maxSeq);
+
+            px.Done(maxSeq);
+            curSeq = maxSeq + 1;
+
+            Integer val = keyValMap.getOrDefault(key, null);
+            return new Response(key, val, true);
+        } finally {
+            mutex.unlock();
+        }
     }
 
     public Response Put(Request req){
         // Your code here
-        return null;
+        try {
+            mutex.lock();
+            int ClientSeq = req.oPair.ClientSeq;
+            if (pastRequests.contains(ClientSeq)) {
+                return new Response(req.oPair.key, req.oPair.value, true);
+            }
+
+            pastRequests.add(ClientSeq);
+            px.Start(curSeq, req.oPair);
+            wait(curSeq);
+
+            int maxSeq = px.Max();
+            updateKeyValMap(maxSeq);
+
+            px.Done(maxSeq);
+
+            curSeq = maxSeq + 1;
+
+            return new Response(req.oPair.key, req.oPair.value, false);
+
+        } finally {
+            mutex.unlock();
+        }
     }
 
 
