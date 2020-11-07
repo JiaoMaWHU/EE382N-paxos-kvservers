@@ -9,7 +9,14 @@ import java.io.Serializable;
 public class Response implements Serializable {
     static final long serialVersionUID=22L;
     // your data here
-
+    String key;
+    Object value;
+    boolean duplicateRequest;
 
     // Your constructor and methods here
+    public Response(String key, Object value, boolean duplicateRequest) {
+        this.key = key;
+        this.value = value;
+        this.duplicateRequest = duplicateRequest;
+    }
 }
