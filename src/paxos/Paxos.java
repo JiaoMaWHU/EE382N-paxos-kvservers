@@ -340,6 +340,7 @@ public class Paxos implements PaxosRMI, Runnable{
         int max_seq = -1;
         mutex.lock();
         try {
+            if (records.isEmpty()) return -1;
             max_seq = Collections.max(records.keySet());
         }finally {
             mutex.unlock();
