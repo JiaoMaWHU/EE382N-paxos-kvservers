@@ -17,4 +17,8 @@ public class Op implements Serializable{
         this.key = key;
         this.value = value;
     }
+
+    public String toString() {
+        return "op: " + op + ", client_seq: " + ClientSeq + ", key: " + key + ", value: " + value;
+    }
 }
