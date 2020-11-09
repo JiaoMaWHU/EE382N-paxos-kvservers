@@ -85,11 +85,17 @@ public class Server implements KVPaxosRMI {
         // Your code here
         try {
             mutex.lock();
-            int maxSeq = px.Max();
-            updateKeyValMap(maxSeq);
-
             int ClientSeq = req.oPair.ClientSeq;
             String key = req.oPair.key;
+
+            int maxSeq = px.Max();
+            for (int i = maxSeq+1; i <= ClientSeq-1; i++) {
+                px.Start(i, null);
+                wait(i);
+            }
+
+            maxSeq = px.Max();
+            updateKeyValMap(maxSeq);
 
             if (pastRequests.contains(ClientSeq)) {
                 Integer val = keyValMap.getOrDefault(key, null);
@@ -99,7 +105,6 @@ public class Server implements KVPaxosRMI {
             pastRequests.add(ClientSeq);
             px.Start(ClientSeq, req.oPair);
             wait(ClientSeq);
-
 
             px.Done(maxSeq);
             curSeq = maxSeq + 1;
@@ -115,10 +120,18 @@ public class Server implements KVPaxosRMI {
         // Your code here
         try {
             mutex.lock();
+
             int maxSeq = px.Max();
+            int ClientSeq = req.oPair.ClientSeq;
+            for (int i = maxSeq+1; i <= ClientSeq-1; i++) {
+                px.Start(i, null);
+                wait(i);
+            }
+
+            maxSeq = px.Max();
+
             updateKeyValMap(maxSeq);
 
-            int ClientSeq = req.oPair.ClientSeq;
             if (pastRequests.contains(ClientSeq)) {
                 return new Response(req.oPair.key, req.oPair.value, true);
             }
@@ -128,7 +141,6 @@ public class Server implements KVPaxosRMI {
             wait(ClientSeq);
 
             px.Done(maxSeq);
-
             curSeq = maxSeq + 1;
 
             return new Response(req.oPair.key, req.oPair.value, false);
